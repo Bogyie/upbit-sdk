@@ -1,0 +1,18 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/upbit-sdk",
+    "crates/upbit-mock",
+]
+
+[workspace.package]
+edition = "2021"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/Bogyie/upbit-sdk"
+rust-version = "1.78"
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+
+[workspace.lints.clippy]
+all = "deny"

@@ -1,0 +1,506 @@
+spec_version: 0.1.0
+name: upbit-rest-api
+verified_at: "2026-05-29 KST"
+base_url: https://api.upbit.com/v1
+source_issue: BOG-228
+source_attachment: upbit-api-spec-draft.md
+sources:
+  api_overview: https://docs.upbit.com/kr/reference/api-overview
+  rest_guide: https://docs.upbit.com/kr/reference/rest-api-guide
+  auth: https://docs.upbit.com/kr/reference/auth
+  rate_limits: https://docs.upbit.com/kr/reference/rate-limits
+  discovery_index: https://docs.upbit.com/kr/llms.txt
+global_rules:
+  auth:
+    quotation_rest: public
+    exchange_rest: jwt_required
+    jwt_header: "Authorization: Bearer <jwt>"
+    query_hash: "Include query_hash and usually query_hash_alg=SHA512 when query parameters or JSON body exist."
+  rate_limit_header: Remaining-Req
+  error_envelope: '{ "error": { "name": "...", "message": "..." } }'
+  decimal_policy: "Preserve money and quantity fields as string-backed decimal types; do not use f64 by default."
+  caveats:
+    - "Embedded OpenAPI security metadata conflicts with overview/auth docs; overview/auth docs are authoritative."
+    - "Some official response required arrays are incomplete; use response_fields, examples, and prose together."
+    - "Runtime data such as market lists, fees, limits, networks, and service states must not be frozen as SDK constants."
+rate_limit_groups:
+  market: { limit: "10/s", unit: ip }
+  candle: { limit: "10/s", unit: ip }
+  trade: { limit: "10/s", unit: ip }
+  ticker: { limit: "10/s", unit: ip }
+  orderbook: { limit: "10/s", unit: ip }
+  default: { limit: "30/s", unit: account }
+  order: { limit: "8/s", unit: account }
+  order-test: { limit: "8/s", unit: account }
+  order-cancel-all: { limit: "1 request / 2s", unit: account }
+  travel-rule-verify: { limit: "1 request / 10 min per same deposit case", unit: account }
+  websocket-message: { limit: "5/s and 100/min", unit: connection }
+endpoints:
+  - id: list_trading_pairs
+    category: quotation.trading_pairs
+    title: List trading pairs
+    method: GET
+    path: /market/all
+    auth_required: false
+    rate_limit_group: market
+    request_fields: [is_details]
+    response_fields: [market, korean_name, english_name]
+    source_url: https://docs.upbit.com/kr/reference/list-trading-pairs
+  - id: list_candles_seconds
+    category: quotation.ohlcv
+    title: List second candles
+    method: GET
+    path: /candles/seconds
+    auth_required: false
+    rate_limit_group: candle
+    request_fields: [market*, to, count]
+    response_fields: &second_candle_fields [market, candle_date_time_utc, candle_date_time_kst, opening_price, high_price, low_price, trade_price, timestamp, candle_acc_trade_price, candle_acc_trade_volume]
+    source_url: https://docs.upbit.com/kr/reference/list-candles-seconds
+  - id: list_candles_minutes
+    category: quotation.ohlcv
+    title: List minute candles
+    method: GET
+    path: /candles/minutes/{unit}
+    auth_required: false
+    rate_limit_group: candle
+    path_params: [{ name: unit, required: true, enum: [1, 3, 5, 10, 15, 30, 60, 240] }]
+    request_fields: [market*, to, count]
+    response_fields: [market, candle_date_time_utc, candle_date_time_kst, opening_price, high_price, low_price, trade_price, timestamp, candle_acc_trade_price, candle_acc_trade_volume, unit]
+    source_url: https://docs.upbit.com/kr/reference/list-candles-minutes
+  - id: list_candles_days
+    category: quotation.ohlcv
+    title: List day candles
+    method: GET
+    path: /candles/days
+    auth_required: false
+    rate_limit_group: candle
+    request_fields: [market*, to, count, converting_price_unit]
+    response_fields: [market, candle_date_time_utc, candle_date_time_kst, opening_price, high_price, low_price, trade_price, timestamp, candle_acc_trade_price, candle_acc_trade_volume, prev_closing_price, change_price, change_rate]
+    source_url: https://docs.upbit.com/kr/reference/list-candles-days
+  - id: list_candles_weeks
+    category: quotation.ohlcv
+    title: List week candles
+    method: GET
+    path: /candles/weeks
+    auth_required: false
+    rate_limit_group: candle
+    request_fields: [market*, to, count]
+    response_fields: [market, candle_date_time_utc, candle_date_time_kst, opening_price, high_price, low_price, trade_price, timestamp, candle_acc_trade_price, candle_acc_trade_volume, first_day_of_period]
+    source_url: https://docs.upbit.com/kr/reference/list-candles-weeks
+  - id: list_candles_months
+    category: quotation.ohlcv
+    title: List month candles
+    method: GET
+    path: /candles/months
+    auth_required: false
+    rate_limit_group: candle
+    request_fields: [market*, to, count]
+    response_fields: [market, candle_date_time_utc, candle_date_time_kst, opening_price, high_price, low_price, trade_price, timestamp, candle_acc_trade_price, candle_acc_trade_volume, first_day_of_period]
+    source_url: https://docs.upbit.com/kr/reference/list-candles-months
+  - id: list_candles_years
+    category: quotation.ohlcv
+    title: List year candles
+    method: GET
+    path: /candles/years
+    auth_required: false
+    rate_limit_group: candle
+    request_fields: [market*, to, count]
+    response_fields: [market, candle_date_time_utc, candle_date_time_kst, opening_price, high_price, low_price, trade_price, timestamp, candle_acc_trade_price, candle_acc_trade_volume, first_day_of_period]
+    source_url: https://docs.upbit.com/kr/reference/list-candles-years
+  - id: list_pair_trades
+    category: quotation.trade
+    title: List pair trades
+    method: GET
+    path: /trades/ticks
+    auth_required: false
+    rate_limit_group: trade
+    request_fields: [market*, to, count, cursor, days_ago]
+    response_fields: [market, trade_date_utc, trade_time_utc, timestamp, trade_price, trade_volume, prev_closing_price, change_price, ask_bid, sequential_id]
+    source_url: https://docs.upbit.com/kr/reference/list-pair-trades
+  - id: list_tickers
+    category: quotation.ticker
+    title: List pair tickers
+    method: GET
+    path: /ticker
+    auth_required: false
+    rate_limit_group: ticker
+    request_fields: [markets*]
+    response_fields: &ticker_fields [market, trade_date, trade_time, trade_date_kst, trade_time_kst, trade_timestamp, opening_price, high_price, low_price, trade_price, prev_closing_price, change, change_price, change_rate, signed_change_price, signed_change_rate, trade_volume, acc_trade_price, acc_trade_price_24h, acc_trade_volume, acc_trade_volume_24h, highest_52_week_price, highest_52_week_date, lowest_52_week_price, lowest_52_week_date, timestamp]
+    source_url: https://docs.upbit.com/kr/reference/list-tickers
+  - id: list_quote_tickers
+    category: quotation.ticker
+    title: List quote-currency tickers
+    method: GET
+    path: /ticker/all
+    auth_required: false
+    rate_limit_group: ticker
+    request_fields: [quote_currencies*]
+    response_fields: *ticker_fields
+    source_url: https://docs.upbit.com/kr/reference/list-quote-tickers
+  - id: list_orderbooks
+    category: quotation.orderbook
+    title: List orderbooks
+    method: GET
+    path: /orderbook
+    auth_required: false
+    rate_limit_group: orderbook
+    request_fields: [markets*, level, count]
+    response_fields: [market, timestamp, total_ask_size, total_bid_size, orderbook_units, level]
+    source_url: https://docs.upbit.com/kr/reference/list-orderbooks
+  - id: list_orderbook_instruments
+    category: quotation.orderbook
+    title: List orderbook instruments
+    method: GET
+    path: /orderbook/instruments
+    auth_required: false
+    rate_limit_group: orderbook
+    request_fields: [markets*]
+    response_fields: [market, quote_currency, tick_size, supported_levels]
+    source_url: https://docs.upbit.com/kr/reference/list-orderbook-instruments
+  - id: list_orderbook_levels
+    category: quotation.orderbook
+    title: List supported orderbook levels
+    method: GET
+    path: /orderbook/supported_levels
+    auth_required: false
+    rate_limit_group: orderbook
+    request_fields: [markets*]
+    response_fields: [market, supported_levels]
+    source_url: https://docs.upbit.com/kr/reference/list-orderbook-levels
+  - id: get_balance
+    category: exchange.asset
+    title: Get account balances
+    method: GET
+    path: /accounts
+    auth_required: true
+    rate_limit_group: default
+    request_fields: []
+    response_fields: [currency, balance, locked, avg_buy_price, avg_buy_price_modified, unit_currency]
+    source_url: https://docs.upbit.com/kr/reference/get-balance
+  - id: available_order_information
+    category: exchange.order
+    title: Get available order information
+    method: GET
+    path: /orders/chance
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [market*]
+    response_fields: [bid_fee, ask_fee, maker_bid_fee, maker_ask_fee, market, bid_account, ask_account]
+    source_url: https://docs.upbit.com/kr/reference/available-order-information
+  - id: new_order
+    category: exchange.order
+    title: Create order
+    method: POST
+    path: /orders
+    auth_required: true
+    rate_limit_group: order
+    request_fields: &order_request_fields [market*, side*, volume, price, ord_type, identifier, time_in_force, smp_type]
+    response_fields: &order_fields [market, uuid, side, ord_type, state, created_at, remaining_volume, executed_volume, reserved_fee, remaining_fee, paid_fee, locked, trades_count, prevented_volume, prevented_locked]
+    caveats: [price_volume_depend_on_ord_type, post_only_cannot_combine_with_smp_type, best_requires_ioc_or_fok]
+    source_url: https://docs.upbit.com/kr/reference/new-order
+  - id: order_test
+    category: exchange.order
+    title: Create test order
+    method: POST
+    path: /orders/test
+    auth_required: true
+    rate_limit_group: order-test
+    request_fields: *order_request_fields
+    response_fields: *order_fields
+    caveats: [same_contract_as_new_order]
+    source_url: https://docs.upbit.com/kr/reference/order-test
+  - id: cancel_and_new_order
+    category: exchange.order
+    title: Cancel and replace order
+    method: POST
+    path: /orders/cancel_and_new
+    auth_required: true
+    rate_limit_group: order
+    request_fields: [prev_order_uuid, prev_order_identifier, new_ord_type*, new_volume, new_price, new_identifier, new_time_in_force, new_smp_type]
+    response_fields: [market, uuid, side, ord_type, state, created_at, remaining_volume, executed_volume, reserved_fee, remaining_fee, paid_fee, locked, trades_count, prevented_volume, prevented_locked, new_order_uuid]
+    caveats: [prev_order_uuid_xor_prev_order_identifier]
+    source_url: https://docs.upbit.com/kr/reference/cancel-and-new-order
+  - id: cancel_order
+    category: exchange.order
+    title: Cancel single order
+    method: DELETE
+    path: /order
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [uuid, identifier]
+    response_fields: *order_fields
+    caveats: [uuid_xor_identifier]
+    source_url: https://docs.upbit.com/kr/reference/cancel-order
+  - id: cancel_orders_by_ids
+    category: exchange.order
+    title: Cancel orders by IDs
+    method: DELETE
+    path: /orders/uuids
+    auth_required: true
+    rate_limit_group: default
+    request_fields: ["uuids[]", "identifiers[]"]
+    response_fields: [success, failed]
+    caveats: [uuids_xor_identifiers]
+    source_url: https://docs.upbit.com/kr/reference/cancel-orders-by-ids
+  - id: batch_cancel_orders
+    category: exchange.order
+    title: Batch cancel open orders
+    method: DELETE
+    path: /orders/open
+    auth_required: true
+    rate_limit_group: order-cancel-all
+    request_fields: [quote_currencies, cancel_side, count, order_by, pairs, exclude_pairs]
+    response_fields: [success, failed]
+    source_url: https://docs.upbit.com/kr/reference/batch-cancel-orders
+  - id: get_order
+    category: exchange.order
+    title: Get single order
+    method: GET
+    path: /order
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [uuid, identifier]
+    response_fields: [market, uuid, side, ord_type, state, created_at, remaining_volume, executed_volume, reserved_fee, remaining_fee, paid_fee, locked, trades_count, prevented_volume, prevented_locked, trades]
+    caveats: [uuid_xor_identifier, official_required_list_lacks_remaining_volume]
+    source_url: https://docs.upbit.com/kr/reference/get-order
+  - id: list_orders_by_ids
+    category: exchange.order
+    title: List orders by IDs
+    method: GET
+    path: /orders/uuids
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [market, "uuids[]", "identifiers[]", order_by]
+    response_fields: [market, uuid, side, ord_type, state, created_at]
+    caveats: [uuids_xor_identifiers]
+    source_url: https://docs.upbit.com/kr/reference/list-orders-by-ids
+  - id: list_open_orders
+    category: exchange.order
+    title: List open orders
+    method: GET
+    path: /orders/open
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [market, state, "states[]", page, limit, order_by]
+    response_fields: [market, uuid, side, ord_type, state, created_at, remaining_volume, executed_funds]
+    source_url: https://docs.upbit.com/kr/reference/list-open-orders
+  - id: list_closed_orders
+    category: exchange.order
+    title: List closed orders
+    method: GET
+    path: /orders/closed
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [market, state, "states[]", start_time, end_time, limit, order_by]
+    response_fields: [market, uuid, side, ord_type, state, created_at, price, volume, remaining_volume, executed_funds]
+    source_url: https://docs.upbit.com/kr/reference/list-closed-orders
+  - id: available_withdrawal_information
+    category: exchange.withdrawal
+    title: Get available withdrawal information
+    method: GET
+    path: /withdraws/chance
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [currency*, net_type]
+    response_fields: [member_level, currency, account, withdraw_limit]
+    source_url: https://docs.upbit.com/kr/reference/available-withdrawal-information
+  - id: withdraw_coin
+    category: exchange.withdrawal
+    title: Request digital asset withdrawal
+    method: POST
+    path: /withdraws/coin
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [currency*, net_type*, amount*, address*, secondary_address, transaction_type]
+    response_fields: &withdrawal_fields [type, uuid, currency, txid, state, created_at, done_at, amount, fee, transaction_type]
+    enum_fields: { transaction_type: [default, internal] }
+    source_url: https://docs.upbit.com/kr/reference/withdraw
+  - id: withdraw_krw
+    category: exchange.withdrawal
+    title: Request KRW withdrawal
+    method: POST
+    path: /withdraws/krw
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [amount*, two_factor_type*]
+    response_fields: *withdrawal_fields
+    enum_fields: { two_factor_type: [kakao, naver, hana] }
+    source_url: https://docs.upbit.com/kr/reference/withdraw-krw
+  - id: cancel_withdrawal
+    category: exchange.withdrawal
+    title: Cancel digital asset withdrawal
+    method: DELETE
+    path: /withdraws/coin
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [uuid*]
+    response_fields: [type, uuid, currency, txid, state, created_at, done_at, amount, fee, is_cancelable]
+    source_url: https://docs.upbit.com/kr/reference/cancel-withdrawal
+  - id: get_withdrawal
+    category: exchange.withdrawal
+    title: Get withdrawal
+    method: GET
+    path: /withdraw
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [uuid, txid, currency]
+    response_fields: *withdrawal_fields
+    source_url: https://docs.upbit.com/kr/reference/get-withdrawal
+  - id: list_withdrawals
+    category: exchange.withdrawal
+    title: List withdrawals
+    method: GET
+    path: /withdraws
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [currency, state, "uuids[]", "txids[]", limit, page, order_by, from, to]
+    response_fields: *withdrawal_fields
+    source_url: https://docs.upbit.com/kr/reference/list-withdrawals
+  - id: list_withdrawal_addresses
+    category: exchange.withdrawal
+    title: List withdrawal addresses
+    method: GET
+    path: /withdraws/coin_addresses
+    auth_required: true
+    rate_limit_group: default
+    request_fields: []
+    response_fields: [currency, net_type, network_name, withdraw_address]
+    source_url: https://docs.upbit.com/kr/reference/list-withdrawal-addresses
+  - id: available_deposit_information
+    category: exchange.deposit
+    title: Get available deposit information
+    method: GET
+    path: /deposits/chance/coin
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [currency*, net_type*]
+    response_fields: [currency, net_type, is_deposit_possible, deposit_impossible_reason, minimum_deposit_amount, minimum_deposit_confirmations, decimal_precision]
+    source_url: https://docs.upbit.com/kr/reference/available-deposit-information
+  - id: create_deposit_address
+    category: exchange.deposit
+    title: Create deposit address
+    method: POST
+    path: /deposits/generate_coin_address
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [currency*, net_type*]
+    response_fields: [currency, net_type, deposit_address]
+    source_url: https://docs.upbit.com/kr/reference/create-deposit-address
+  - id: get_deposit_address
+    category: exchange.deposit
+    title: Get deposit address
+    method: GET
+    path: /deposits/coin_address
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [currency*, net_type*]
+    response_fields: [currency, net_type, deposit_address]
+    source_url: https://docs.upbit.com/kr/reference/get-deposit-address
+  - id: list_deposit_addresses
+    category: exchange.deposit
+    title: List deposit addresses
+    method: GET
+    path: /deposits/coin_addresses
+    auth_required: true
+    rate_limit_group: default
+    request_fields: []
+    response_fields: [currency, net_type, deposit_address]
+    source_url: https://docs.upbit.com/kr/reference/list-deposit-addresses
+  - id: get_deposit
+    category: exchange.deposit
+    title: Get deposit
+    method: GET
+    path: /deposit
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [currency, uuid, txid]
+    response_fields: &deposit_fields [type, uuid, currency, txid, state, created_at, done_at, amount, fee, transaction_type]
+    source_url: https://docs.upbit.com/kr/reference/get-deposit
+  - id: list_deposits
+    category: exchange.deposit
+    title: List deposits
+    method: GET
+    path: /deposits
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [currency, state, "uuids[]", "txids[]", limit, page, order_by, from, to]
+    response_fields: *deposit_fields
+    caveats: [official_required_list_missing_or_incomplete]
+    source_url: https://docs.upbit.com/kr/reference/list-deposits
+  - id: deposit_krw
+    category: exchange.deposit
+    title: Request KRW deposit
+    method: POST
+    path: /deposits/krw
+    auth_required: true
+    rate_limit_group: default
+    request_fields: [amount*, two_factor_type*]
+    response_fields: *deposit_fields
+    enum_fields: { two_factor_type: [kakao, naver, hana] }
+    source_url: https://docs.upbit.com/kr/reference/deposit-krw
+  - id: list_travelrule_vasps
+    category: exchange.travel_rule
+    title: List Travel Rule VASPs
+    method: GET
+    path: /travel_rule/vasps
+    auth_required: true
+    rate_limit_group: default
+    request_fields: []
+    response_fields: [depositable, vasp_uuid, vasp_name, withdrawable]
+    source_url: https://docs.upbit.com/kr/reference/list-travelrule-vasps
+  - id: verify_travelrule_by_uuid
+    category: exchange.travel_rule
+    title: Verify deposit owner by UUID
+    method: POST
+    path: /travel_rule/deposit/uuid
+    auth_required: true
+    rate_limit_group: default
+    extra_throttle: travel-rule-verify
+    request_fields: [deposit_uuid*, vasp_uuid*]
+    response_fields: [deposit_uuid, deposit_state, verification_result]
+    source_url: https://docs.upbit.com/kr/reference/verify-travelrule-by-uuid
+  - id: verify_travelrule_by_txid
+    category: exchange.travel_rule
+    title: Verify deposit owner by TxID
+    method: POST
+    path: /travel_rule/deposit/txid
+    auth_required: true
+    rate_limit_group: default
+    extra_throttle: travel-rule-verify
+    request_fields: [vasp_uuid*, txid*, currency*, net_type*]
+    response_fields: [deposit_uuid, verification_result, deposit_state]
+    source_url: https://docs.upbit.com/kr/reference/verify-travelrule-by-txid
+  - id: get_service_status
+    category: exchange.service
+    title: Get wallet service status
+    method: GET
+    path: /status/wallet
+    auth_required: true
+    rate_limit_group: default
+    request_fields: []
+    response_fields: [currency, wallet_state, block_elapsed_minutes, net_type, network_name]
+    source_url: https://docs.upbit.com/kr/reference/get-service-status
+  - id: list_api_keys
+    category: exchange.service
+    title: List API keys
+    method: GET
+    path: /api_keys
+    auth_required: true
+    rate_limit_group: default
+    request_fields: []
+    response_fields: [access_key, expire_at]
+    source_url: https://docs.upbit.com/kr/reference/list-api-keys
+  - id: list_subscriptions
+    protocol: websocket
+    category: websocket.operation
+    title: List current WebSocket subscriptions
+    method: LIST_SUBSCRIPTIONS
+    path: wss://api.upbit.com/websocket/v1
+    auth_required: false
+    rate_limit_group: websocket-message
+    request_fields: [ticket*, method*]
+    response_fields: [method, result, result.type, result.codes, result.level, ticket]
+    caveats:
+      - "Included as the 45th API inventory item because BOG-228/BOG-235 say 45 REST endpoints, while official REST references and the BOG-228 REST table enumerate 44 REST endpoints."
+      - "Private stream subscriptions use wss://api.upbit.com/websocket/v1/private and JWT auth."
+    source_url: https://docs.upbit.com/kr/reference/list-subscriptions
