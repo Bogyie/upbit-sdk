@@ -1,7 +1,8 @@
 # crates.io Publishing
 
 This repository includes a GitHub Actions workflow for crates.io publish
-readiness and controlled manual publishing of the `upbit-sdk` crate:
+readiness and controlled publishing of the `upbit-sdk` crate after a GitHub
+Release is published from `main`:
 
 - workflow: `.github/workflows/publish-crates.yml`
 - package path: `crates/upbit-sdk`
@@ -18,9 +19,10 @@ merge release branches unless the release is explicitly authorized.
 
 The workflow runs in dry-run mode for pull requests, pushes to
 `integration/BOG-223-upbit-rust-sdk`, pushes to `main`, and manual
-`workflow_dispatch` runs where `mode` is `dry-run`. Pull request and push
-dry-runs only trigger when the workflow or package paths listed in the workflow
-change.
+`workflow_dispatch` runs where `mode` is `dry-run`. GitHub Release events do
+not run the dry-run job because they are reserved for the real publish path.
+Pull request and push dry-runs only trigger when the workflow or package paths
+listed in the workflow change.
 
 Dry-run jobs:
 
@@ -36,29 +38,38 @@ The workflow prints an explicit dry-run confirmation before the action step.
 
 ## Real Publish Path
 
-Real crates.io publishing is intentionally narrow. It can only happen when all
-of these conditions are true:
+Real crates.io publishing is intentionally narrow. The expected path is:
+merge the release commit to `main`, create a release tag from `main`, then
+publish a GitHub Release for that tag. The publish job can only proceed when
+all of these conditions are true:
 
-- the workflow is started manually with `workflow_dispatch`;
-- the `mode` input is `publish`;
+- the workflow is triggered by a GitHub Release `published` event, or a
+  separately authorized manual `workflow_dispatch` run with `mode=publish`;
 - the selected workflow ref is a release tag;
+- the release tag commit is already reachable from `origin/main`;
+- for GitHub Release events, the event action is `published` and
+  `release.target_commitish` resolves to `main`, `refs/heads/main`, the
+  verified `origin/main` commit, or the verified tag commit;
 - the repository has a `CARGO_REGISTRY_TOKEN` secret with crates.io publish
   permissions for `upbit-sdk`;
 - the `crates-io` GitHub Environment approvals and protections, if configured,
   allow the job to continue.
 
-The publish job validates the tag ref and token presence before invoking
-the reviewed pinned `katyo/publish-crates@v2` equivalent with `dry-run: false`
-and `check-repo: true`.
+The publish job validates the tag ref, main-branch ancestry, release event
+shape, and token presence before invoking the reviewed pinned
+`katyo/publish-crates@v2` equivalent with `dry-run: false` and
+`check-repo: true`.
 
 Recommended release sequence:
 
 1. Confirm the crate version, changelog, README, examples, and package include
    list are approved.
 2. Run the workflow manually with `mode=dry-run` on the release candidate ref.
-3. Create the release tag only after release approval.
-4. Run the workflow manually from that tag with `mode=publish`.
-5. Verify the crates.io package page and published metadata after the job
+3. Merge the approved release commit to `main`.
+4. Create the release tag from `main`.
+5. Publish the GitHub Release for that tag. The release `published` event starts
+   the real publish job.
+6. Verify the crates.io package page and published metadata after the job
    completes.
 
 ## Secret Handling
@@ -68,8 +79,8 @@ Store the crates.io token only as a GitHub Actions secret named
 comments, workflow logs, screenshots, or local command output.
 
 Dry-run jobs do not pass the registry token to the third-party action. The
-token is only provided to the protected manual publish job after its tag and
-secret preconditions pass.
+token is only provided to the protected real publish job after its tag,
+main-branch, release-event, and secret preconditions pass.
 
 ## Failure And Rollback Notes
 
