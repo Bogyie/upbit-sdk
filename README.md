@@ -15,6 +15,7 @@ live trading keys.
 - `crates/upbit-sdk/examples`: runnable SDK examples for public, authenticated,
   and mock-server flows.
 - `docs/usage.md`: detailed usage guide with safety and testing notes.
+- `docs/publishing.md`: crates.io dry-run and controlled publish workflow notes.
 - `spec/upbit-rest-api.yaml`: machine-readable REST API contract seeded from
   official Upbit documentation research.
 - `spec/README.md`: spec source, caveats, and regeneration policy.
@@ -38,7 +39,14 @@ upbit-sdk = { path = "crates/upbit-sdk" }
 
 Future crates.io publishing must be done separately and deliberately. Do not
 run `cargo publish` without explicit release authorization and a reviewed
-release checklist.
+release checklist. The repository workflow `.github/workflows/publish-crates.yml`
+uses a reviewed pinned equivalent of `katyo/publish-crates@v2`; pull request,
+integration-branch, main-branch, and manual dry-run paths cannot publish
+because they run with `dry-run: true` and do not pass a registry token to the
+third-party action. Real publishing requires a manual workflow dispatch with
+`mode=publish`, a release tag ref, the `CARGO_REGISTRY_TOKEN` GitHub secret,
+and the protected `crates-io` environment. See `docs/publishing.md` for the
+full procedure.
 
 ## Feature Scope
 
@@ -162,3 +170,6 @@ replaced with `cargo publish` unless a release is explicitly authorized.
 See `docs/usage.md` for public quotation calls, authenticated client setup,
 mock-server configuration, retry/fallback examples, error handling, logging and
 redaction guidance, and current crates.io readiness notes.
+
+See `docs/publishing.md` for crates.io dry-run checks, manual publish
+preconditions, secret handling, and failed publish or rollback caveats.
