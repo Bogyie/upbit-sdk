@@ -65,6 +65,7 @@ impl UpbitClient {
         }
 
         if auth_required {
+            self.config.validate_authenticated_transport()?;
             let credentials = self.config.credentials().ok_or_else(|| {
                 SdkError::Auth("credentials are required for this endpoint".into())
             })?;

@@ -1,4 +1,5 @@
 use std::fmt;
+use std::net::IpAddr;
 use std::time::Duration;
 
 use url::Url;
@@ -125,6 +126,10 @@ impl UpbitConfig {
     pub const fn fallback_enabled(&self) -> bool {
         self.fallback_enabled
     }
+
+    pub(crate) fn validate_authenticated_transport(&self) -> Result<(), SdkError> {
+        validate_authenticated_base_url(&self.base_url)
+    }
 }
 
 impl Default for UpbitConfig {
@@ -149,9 +154,7 @@ impl UpbitConfigBuilder {
     pub fn base_url(mut self, base_url: impl AsRef<str>) -> Result<Self, SdkError> {
         let parsed = Url::parse(base_url.as_ref())
             .map_err(|error| SdkError::Config(format!("invalid base URL: {error}")))?;
-        if parsed.scheme() != "https" && parsed.scheme() != "http" {
-            return Err(SdkError::Config("base URL must use http or https".into()));
-        }
+        validate_base_url(&parsed)?;
         self.base_url = parsed;
         Ok(self)
     }
@@ -203,6 +206,36 @@ impl UpbitConfigBuilder {
     }
 }
 
+fn validate_base_url(base_url: &Url) -> Result<(), SdkError> {
+    match base_url.scheme() {
+        "https" => Ok(()),
+        "http" if is_loopback_host(base_url) => Ok(()),
+        "http" => Err(SdkError::Config(
+            "HTTP base URL is only allowed for loopback mock/test endpoints".into(),
+        )),
+        _ => Err(SdkError::Config(
+            "base URL must use https, or http for loopback mock/test endpoints".into(),
+        )),
+    }
+}
+
+pub(crate) fn validate_authenticated_base_url(base_url: &Url) -> Result<(), SdkError> {
+    validate_base_url(base_url)
+}
+
+fn is_loopback_host(base_url: &Url) -> bool {
+    let Some(host) = base_url.host_str() else {
+        return false;
+    };
+
+    let host_without_ipv6_brackets = host.trim_start_matches('[').trim_end_matches(']');
+
+    host.eq_ignore_ascii_case("localhost")
+        || host_without_ipv6_brackets
+            .parse::<IpAddr>()
+            .is_ok_and(|address| address.is_loopback())
+}
+
 impl Default for UpbitConfigBuilder {
     fn default() -> Self {
         Self {
@@ -234,10 +267,38 @@ mod tests {
     #[test]
     fn rejects_invalid_config_values() {
         assert!(UpbitConfig::builder().base_url("not a url").is_err());
+        assert!(UpbitConfig::builder()
+            .base_url("http://api.upbit.com/v1")
+            .is_err());
         assert!(UpbitConfig::builder().timeout(Duration::ZERO).is_err());
         assert!(UpbitConfig::builder().user_agent("  ").is_err());
         assert!(Credentials::new("", "secret").is_err());
         assert!(Credentials::new("access", "").is_err());
+    }
+
+    #[test]
+    fn allows_http_only_for_loopback_mock_endpoints() {
+        for url in [
+            "http://localhost:8080/v1",
+            "http://127.0.0.1:8080/v1",
+            "http://[::1]:8080/v1",
+        ] {
+            let config = UpbitConfig::builder()
+                .base_url(url)
+                .unwrap()
+                .build()
+                .unwrap();
+            assert_eq!(config.base_url().as_str(), url);
+        }
+    }
+
+    #[test]
+    fn authenticated_transport_rejects_remote_http_base_url() {
+        let remote_http = Url::parse("http://api.upbit.com/v1").unwrap();
+
+        let error = validate_authenticated_base_url(&remote_http).unwrap_err();
+
+        assert!(matches!(error, SdkError::Config(message) if message.contains("loopback")));
     }
 
     #[test]
