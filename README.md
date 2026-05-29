@@ -1,18 +1,61 @@
 # upbit-sdk
 
-Rust workspace for an Upbit SDK and related test tooling.
+Rust SDK workspace for the Upbit REST API and local mock testing tools.
+
+The SDK is designed around a repo-owned REST contract in
+`spec/upbit-rest-api.yaml`, typed request/response models, conservative client
+defaults, and a credential-free mock server so development can happen without
+live trading keys.
 
 ## Workspace Layout
 
-- `crates/upbit-sdk`: SDK crate foundation.
-- `crates/upbit-mock`: spec-driven mock server and conformance baseline for
-  SDK integration tests.
+- `crates/upbit-sdk`: SDK crate with REST endpoint methods, typed models,
+  configuration, JWT signing, retry/fallback controls, and redaction helpers.
+- `crates/upbit-mock`: spec-driven local mock server for SDK integration tests.
+- `crates/upbit-sdk/examples`: runnable SDK examples for public, authenticated,
+  and mock-server flows.
+- `docs/usage.md`: detailed usage guide with safety and testing notes.
 - `spec/upbit-rest-api.yaml`: machine-readable REST API contract seeded from
   official Upbit documentation research.
 - `spec/README.md`: spec source, caveats, and regeneration policy.
 
-The REST spec is the shared contract for SDK request/response types and mock
-server route fixtures.
+## Install
+
+This repository is not published to crates.io yet. Use the git dependency form
+or a local path while the crate is prepared for publishing:
+
+```toml
+[dependencies]
+upbit-sdk = { git = "https://github.com/Bogyie/upbit-sdk", package = "upbit-sdk" }
+```
+
+For local workspace development:
+
+```toml
+[dependencies]
+upbit-sdk = { path = "crates/upbit-sdk" }
+```
+
+Future crates.io publishing must be done separately and deliberately. Do not
+run `cargo publish` without explicit release authorization and a reviewed
+release checklist.
+
+## Feature Scope
+
+The SDK covers the 44 REST endpoints tracked in `spec/upbit-rest-api.yaml`.
+The spec inventory item `list_subscriptions` is a WebSocket operation and is
+not part of the REST client surface.
+
+Current SDK capabilities include:
+
+- public Quotation API calls without credentials;
+- authenticated Exchange API calls with JWT signing;
+- typed endpoint request and response models;
+- configurable base URL for live or loopback mock endpoints;
+- optional bounded retries for retryable failures;
+- optional fallback routing with unsafe/authenticated requests disabled by
+  default;
+- sanitized tracing fields and helper redaction utilities.
 
 ## Safety Defaults
 
@@ -30,9 +73,10 @@ server route fixtures.
   account identifiers, order identifiers, price, or volume, and request bodies
   are not emitted by the client.
 
-The client owns one reusable `reqwest::Client` per `UpbitClient` instance, so
-retry and fallback attempts rebuild request objects while preserving the
-underlying HTTP client's connection pooling.
+Keep live Upbit access keys, secret keys, JWTs, account identifiers, order
+identifiers, and private trading data out of source code, fixtures, issue
+comments, logs, and screenshots. Load credentials from the caller's secret
+store or environment at runtime.
 
 ## Local Mock Server
 
@@ -42,68 +86,79 @@ Run a credential-free mock Upbit REST endpoint for SDK integration tests:
 cargo run -p upbit-mock -- 127.0.0.1:8001 .
 ```
 
-Use `http://127.0.0.1:8001/v1` as the SDK REST base URL. See
-`crates/upbit-mock/README.md` for auth, validation, error, fixture, and
+Use `http://127.0.0.1:8001/v1` as the SDK REST base URL. Quotation endpoints
+are public. Exchange endpoints require any bearer-token-like header in the mock
+server and dummy SDK credentials when using the SDK client. Never use live keys
+for mock tests.
+
+See `crates/upbit-mock/README.md` for auth, validation, error, fixture, and
 conformance details.
 
-## SDK Endpoint Usage
-
-Use the local mock for endpoint development and tests. Quotation mock examples
-are credential-free:
+## Basic Public Usage
 
 ```rust,no_run
-use upbit_sdk::{CandleRequest, MinuteCandleUnit, UpbitClient, UpbitConfig};
+use upbit_sdk::{UpbitClient, UpbitConfig};
 
 # async fn example() -> Result<(), upbit_sdk::SdkError> {
-let config = UpbitConfig::builder()
-    .base_url("http://127.0.0.1:8001/v1")?
-    .build()?;
-let client = UpbitClient::new(config)?;
+let client = UpbitClient::new(UpbitConfig::default())?;
+let tickers = client.list_tickers(vec!["KRW-BTC".to_owned()]).await?;
 
-let candles = client
-    .list_candles_minutes(
-        MinuteCandleUnit::One,
-        CandleRequest {
-            market: "KRW-BTC".into(),
-            count: Some(1),
-            ..Default::default()
-        },
-    )
-    .await?;
+for ticker in tickers {
+    println!("{} last trade price: {}", ticker.market, ticker.trade_price);
+}
 # Ok(())
 # }
 ```
 
-Auth-required exchange methods still need SDK credentials so the client can
-build a bearer JWT, but local mock tests should use dummy, non-live values only:
+## Authenticated Setup
+
+Authenticated Exchange API calls require credentials. Read them from the
+environment or another secret store owned by the caller:
 
 ```rust,no_run
 use upbit_sdk::{Credentials, UpbitClient, UpbitConfig};
 
-# fn example() -> Result<UpbitClient, upbit_sdk::SdkError> {
-let config = UpbitConfig::builder()
-    .base_url("http://127.0.0.1:8001/v1")?
-    .credentials(Credentials::new("test-access", "test-secret")?)
-    .build()?;
-UpbitClient::new(config)
-# }
-```
+# fn example() -> Result<UpbitClient, Box<dyn std::error::Error>> {
+let access_key = std::env::var("UPBIT_ACCESS_KEY")?;
+let secret_key = std::env::var("UPBIT_SECRET_KEY")?;
 
-Live exchange endpoints require credentials and JWT signing. Keep live
-credentials in the caller's secret store or environment, never in source code,
-mock tests, or fixtures:
-
-```rust,no_run
-use upbit_sdk::{Credentials, UpbitClient, UpbitConfig};
-
-# fn example(access_key: String, secret_key: String) -> Result<UpbitClient, upbit_sdk::SdkError> {
 let config = UpbitConfig::builder()
     .credentials(Credentials::new(access_key, secret_key)?)
     .build()?;
-UpbitClient::new(config)
+
+let client = UpbitClient::new(config)?;
+# Ok(client)
 # }
 ```
 
-The SDK covers the 44 REST endpoints in `spec/upbit-rest-api.yaml`. The spec's
-`list_subscriptions` inventory item is a WebSocket operation and is documented
-outside the REST client surface.
+Avoid copy-pasteable live order examples. Prefer read-only account endpoints
+and the mock server while validating integration code.
+
+## Examples And Checks
+
+Run examples against the live public API or a local mock as appropriate:
+
+```sh
+cargo run -p upbit-sdk --example public_ticker
+cargo run -p upbit-sdk --example mock_server
+UPBIT_ACCESS_KEY=placeholder UPBIT_SECRET_KEY=placeholder \
+  cargo run -p upbit-sdk --example authenticated_client
+```
+
+Recommended local checks before opening a change:
+
+```sh
+cargo fmt --check
+cargo test
+cargo check -p upbit-sdk --examples
+cargo package -p upbit-sdk --allow-dirty --list
+```
+
+`cargo package --list` is a non-publishing readiness check. It must not be
+replaced with `cargo publish` unless a release is explicitly authorized.
+
+## More Usage
+
+See `docs/usage.md` for public quotation calls, authenticated client setup,
+mock-server configuration, retry/fallback examples, error handling, logging and
+redaction guidance, and current crates.io readiness notes.
