@@ -1,0 +1,43 @@
+{
+  "success": {
+    "source": "spec/upbit-rest-api.yaml",
+    "strategy": "Generate one deterministic representative JSON fixture per REST endpoint from response_fields.",
+    "runtime_data_policy": "Market, fee, wallet, network, and service-state examples are mock-only responses, not SDK constants."
+  },
+  "errors": {
+    "auth_failure": {
+      "status": 401,
+      "body": {
+        "error": {
+          "name": "jwt_verification",
+          "message": "Authorization bearer token is required."
+        }
+      }
+    },
+    "validation_error": {
+      "status": 400,
+      "body": {
+        "error": {
+          "name": "validation_error",
+          "message": "Missing required request field(s): <field>"
+        }
+      }
+    },
+    "rate_limit": {
+      "status": 429,
+      "trigger": "Add __mock_error=rate_limit to the query string.",
+      "body": {
+        "error": {
+          "name": "too_many_requests",
+          "message": "Rate limit exceeded."
+        }
+      }
+    }
+  },
+  "documented_exceptions": [
+    {
+      "id": "list_subscriptions",
+      "reason": "WebSocket operation, not an HTTP REST route."
+    }
+  ]
+}
