@@ -25,3 +25,48 @@ cargo run -p upbit-mock -- 127.0.0.1:8001 .
 Use `http://127.0.0.1:8001/v1` as the SDK REST base URL. See
 `crates/upbit-mock/README.md` for auth, validation, error, fixture, and
 conformance details.
+
+## SDK Endpoint Usage
+
+Use the local mock for credential-free endpoint development and tests:
+
+```rust,no_run
+use upbit_sdk::{CandleRequest, MinuteCandleUnit, UpbitClient, UpbitConfig};
+
+# async fn example() -> Result<(), upbit_sdk::SdkError> {
+let config = UpbitConfig::builder()
+    .base_url("http://127.0.0.1:8001/v1")?
+    .build()?;
+let client = UpbitClient::new(config)?;
+
+let candles = client
+    .list_candles_minutes(
+        MinuteCandleUnit::One,
+        CandleRequest {
+            market: "KRW-BTC".into(),
+            count: Some(1),
+            ..Default::default()
+        },
+    )
+    .await?;
+# Ok(())
+# }
+```
+
+Exchange endpoints require credentials and JWT signing. Keep live credentials in
+the caller's secret store or environment, never in source code or fixtures:
+
+```rust,no_run
+use upbit_sdk::{Credentials, UpbitClient, UpbitConfig};
+
+# fn example(access_key: String, secret_key: String) -> Result<UpbitClient, upbit_sdk::SdkError> {
+let config = UpbitConfig::builder()
+    .credentials(Credentials::new(access_key, secret_key)?)
+    .build()?;
+UpbitClient::new(config)
+# }
+```
+
+The SDK covers the 44 REST endpoints in `spec/upbit-rest-api.yaml`. The spec's
+`list_subscriptions` inventory item is a WebSocket operation and is documented
+outside the REST client surface.
