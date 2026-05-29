@@ -60,6 +60,9 @@ pub struct EndpointSpec {
     pub method: String,
     /// Path template.
     pub path: String,
+    /// Path parameter contracts.
+    #[serde(default)]
+    pub path_params: Vec<PathParamSpec>,
     /// Whether JWT auth is required.
     pub auth_required: bool,
     /// Rate-limit group name.
@@ -71,6 +74,19 @@ pub struct EndpointSpec {
     /// Representative response field names.
     #[serde(default)]
     pub response_fields: Vec<String>,
+}
+
+/// Path parameter contract used by mock route validation.
+#[derive(Debug, Clone, Deserialize)]
+pub struct PathParamSpec {
+    /// Parameter name in the endpoint path template.
+    pub name: String,
+    /// Whether the parameter is required.
+    #[serde(default)]
+    pub required: bool,
+    /// Allowed values for enum-constrained parameters.
+    #[serde(default, rename = "enum")]
+    pub enum_values: Vec<Value>,
 }
 
 impl EndpointSpec {
@@ -221,6 +237,10 @@ impl MockServerSpec {
             return error_response(429, "too_many_requests", "Rate limit exceeded.");
         }
 
+        if let Err(message) = validate_path_params(endpoint, path) {
+            return error_response(400, "validation_error", &message);
+        }
+
         let missing = missing_required_fields(endpoint, &request);
         if !missing.is_empty() {
             return error_response(
@@ -277,6 +297,8 @@ impl MockServerSpec {
                 )));
             }
 
+            assert_path_param_contract(endpoint)?;
+
             if endpoint.response_fields.is_empty() {
                 return Err(MockError::Conformance(format!(
                     "{} has no representative response fields",
@@ -294,6 +316,28 @@ impl MockServerSpec {
                     return Err(MockError::Conformance(format!(
                         "{} does not enforce auth",
                         endpoint.id
+                    )));
+                }
+            }
+
+            for param in &endpoint.path_params {
+                if param.enum_values.is_empty() {
+                    continue;
+                }
+
+                let invalid_path = example_path_with_override(
+                    endpoint,
+                    &param.name,
+                    &invalid_path_enum_candidate(param),
+                );
+                let invalid_response =
+                    self.dispatch(request_with_required_fields(endpoint, invalid_path));
+                if invalid_response.status != 400
+                    || invalid_response.body["error"]["name"] != "validation_error"
+                {
+                    return Err(MockError::Conformance(format!(
+                        "{} path parameter {} enum is not enforced",
+                        endpoint.id, param.name
                     )));
                 }
             }
@@ -480,22 +524,181 @@ fn split_path_and_query(target: &str) -> (String, BTreeMap<String, String>) {
 }
 
 fn path_matches(template: &str, request_path: &str) -> bool {
+    extract_path_params(template, request_path).is_some()
+}
+
+fn extract_path_params(template: &str, request_path: &str) -> Option<BTreeMap<String, String>> {
     let template_parts: Vec<&str> = template.trim_matches('/').split('/').collect();
     let request_parts: Vec<&str> = request_path.trim_matches('/').split('/').collect();
 
-    template_parts.len() == request_parts.len()
-        && template_parts
-            .iter()
-            .zip(request_parts)
-            .all(|(template_part, request_part)| {
-                (template_part.starts_with('{') && template_part.ends_with('}'))
-                    || *template_part == request_part
-            })
+    if template_parts.len() != request_parts.len() {
+        return None;
+    }
+
+    let mut params = BTreeMap::new();
+
+    for (template_part, request_part) in template_parts.iter().zip(request_parts) {
+        if let Some(name) = path_param_name(template_part) {
+            params.insert(name.to_owned(), request_part.to_owned());
+        } else if *template_part != request_part {
+            return None;
+        }
+    }
+
+    Some(params)
+}
+
+fn path_param_name(template_part: &str) -> Option<&str> {
+    template_part
+        .strip_prefix('{')
+        .and_then(|name| name.strip_suffix('}'))
+        .filter(|name| !name.is_empty())
+}
+
+fn validate_path_params(endpoint: &EndpointSpec, request_path: &str) -> Result<(), String> {
+    let params = extract_path_params(&endpoint.path, request_path)
+        .ok_or_else(|| "Request path does not match endpoint template.".to_owned())?;
+
+    for param in &endpoint.path_params {
+        let value = params.get(&param.name);
+        if param.required && value.is_none() {
+            return Err(format!("Missing required path parameter: {}", param.name));
+        }
+
+        if let Some(value) = value {
+            if !param.enum_values.is_empty()
+                && !param
+                    .enum_values
+                    .iter()
+                    .any(|allowed| path_enum_value_matches(allowed, value))
+            {
+                return Err(format!(
+                    "Invalid path parameter {}: {} is not one of [{}]",
+                    param.name,
+                    value,
+                    param
+                        .enum_values
+                        .iter()
+                        .map(path_enum_value_as_string)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn path_enum_value_matches(allowed: &Value, actual: &str) -> bool {
+    path_enum_value_as_string(allowed) == actual
+}
+
+fn path_enum_value_as_string(value: &Value) -> String {
+    match value {
+        Value::String(value) => value.clone(),
+        Value::Number(value) => value.to_string(),
+        Value::Bool(value) => value.to_string(),
+        _ => value.to_string(),
+    }
 }
 
 fn example_path(endpoint: &EndpointSpec) -> String {
-    let path = endpoint.path.replace("{unit}", "1");
+    example_path_with_override(endpoint, "", "")
+}
+
+fn example_path_with_override(
+    endpoint: &EndpointSpec,
+    override_name: &str,
+    override_value: &str,
+) -> String {
+    let mut path = endpoint.path.clone();
+    for param in &endpoint.path_params {
+        let replacement = if param.name == override_name {
+            override_value.to_owned()
+        } else {
+            param
+                .enum_values
+                .first()
+                .map(path_enum_value_as_string)
+                .unwrap_or_else(|| "mock".to_owned())
+        };
+        path = path.replace(&format!("{{{}}}", param.name), &replacement);
+    }
     format!("{API_PREFIX}{path}")
+}
+
+fn invalid_path_enum_candidate(param: &PathParamSpec) -> String {
+    let mut candidate = "__invalid__".to_owned();
+    while param
+        .enum_values
+        .iter()
+        .any(|allowed| path_enum_value_matches(allowed, &candidate))
+    {
+        candidate.push('_');
+    }
+    candidate
+}
+
+fn request_with_required_fields(endpoint: &EndpointSpec, path: String) -> MockRequest {
+    let mut request = MockRequest::new(&endpoint.method, path);
+    if endpoint.auth_required {
+        request = request.with_header("authorization", "Bearer test.jwt");
+    }
+
+    for field in endpoint.required_fields() {
+        request = request.with_query(field, "mock");
+    }
+
+    request
+}
+
+fn assert_path_param_contract(endpoint: &EndpointSpec) -> Result<(), MockError> {
+    let template_params: BTreeSet<String> = endpoint
+        .path
+        .trim_matches('/')
+        .split('/')
+        .filter_map(path_param_name)
+        .map(ToOwned::to_owned)
+        .collect();
+
+    for name in &template_params {
+        if !endpoint
+            .path_params
+            .iter()
+            .any(|param| param.name.as_str() == name)
+        {
+            return Err(MockError::Conformance(format!(
+                "{} template path parameter {name} is missing from path_params",
+                endpoint.id
+            )));
+        }
+    }
+
+    for param in &endpoint.path_params {
+        if param.required && !template_params.contains(&param.name) {
+            return Err(MockError::Conformance(format!(
+                "{} required path parameter {} is not present in path template",
+                endpoint.id, param.name
+            )));
+        }
+
+        let example = example_path(endpoint);
+        let Some(example_without_prefix) = example.strip_prefix(API_PREFIX) else {
+            return Err(MockError::Conformance(format!(
+                "{} example path is missing API prefix",
+                endpoint.id
+            )));
+        };
+        validate_path_params(endpoint, example_without_prefix).map_err(|message| {
+            MockError::Conformance(format!(
+                "{} path parameter contract failed: {message}",
+                endpoint.id
+            ))
+        })?;
+    }
+
+    Ok(())
 }
 
 fn has_bearer_token(headers: &BTreeMap<String, String>) -> bool {
@@ -801,6 +1004,20 @@ mod tests {
 
         assert_eq!(response.status, 400);
         assert_eq!(response.body["error"]["name"], "validation_error");
+    }
+
+    #[test]
+    fn path_param_enums_are_validated() {
+        let response = mock().dispatch(
+            MockRequest::new("GET", "/v1/candles/minutes/999").with_query("market", "KRW-BTC"),
+        );
+
+        assert_eq!(response.status, 400);
+        assert_eq!(response.body["error"]["name"], "validation_error");
+        assert!(response.body["error"]["message"]
+            .as_str()
+            .expect("error message")
+            .contains("Invalid path parameter unit"));
     }
 
     #[test]
