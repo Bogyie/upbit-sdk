@@ -403,7 +403,7 @@ impl UpbitClient {
 
     pub async fn available_deposit_information(
         &self,
-        request: CurrencyNetworkRequest,
+        request: DepositCurrencyNetworkRequest,
     ) -> Result<DepositChance, SdkError> {
         self.get_endpoint("/deposits/chance/coin", request.to_query_params(), true)
             .await
@@ -411,7 +411,7 @@ impl UpbitClient {
 
     pub async fn create_deposit_address(
         &self,
-        request: CurrencyNetworkRequest,
+        request: DepositCurrencyNetworkRequest,
     ) -> Result<DepositAddress, SdkError> {
         self.post_endpoint("/deposits/generate_coin_address", &request, true)
             .await
@@ -419,7 +419,7 @@ impl UpbitClient {
 
     pub async fn get_deposit_address(
         &self,
-        request: CurrencyNetworkRequest,
+        request: DepositCurrencyNetworkRequest,
     ) -> Result<DepositAddress, SdkError> {
         self.get_endpoint("/deposits/coin_address", request.to_query_params(), true)
             .await
@@ -955,6 +955,20 @@ impl ToQueryParams for CurrencyNetworkRequest {
 }
 
 #[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
+pub struct DepositCurrencyNetworkRequest {
+    pub currency: String,
+    pub net_type: String,
+}
+
+impl ToQueryParams for DepositCurrencyNetworkRequest {
+    fn to_query_params(&self) -> QueryParams {
+        QueryParams::new()
+            .push("currency", self.currency.clone())
+            .push("net_type", self.net_type.clone())
+    }
+}
+
+#[derive(Clone, Debug, Deserialize, Eq, PartialEq, Serialize)]
 pub struct WithdrawCoinRequest {
     pub currency: String,
     pub net_type: String,
@@ -1337,6 +1351,28 @@ mod tests {
                 .to_query_params()
                 .to_query_string(),
             "uuids[]=u1&uuids[]=u2"
+        );
+    }
+
+    #[test]
+    fn deposit_network_request_requires_net_type_in_public_contract() {
+        let deposit_request = DepositCurrencyNetworkRequest {
+            currency: "BTC".into(),
+            net_type: "BTC".into(),
+        };
+
+        assert_eq!(
+            deposit_request.to_query_params().to_query_string(),
+            "currency=BTC&net_type=BTC"
+        );
+
+        let withdrawal_request = CurrencyNetworkRequest {
+            currency: "BTC".into(),
+            net_type: None,
+        };
+        assert_eq!(
+            withdrawal_request.to_query_params().to_query_string(),
+            "currency=BTC"
         );
     }
 

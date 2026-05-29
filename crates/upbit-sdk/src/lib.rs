@@ -9,13 +9,17 @@ pub mod client;
 pub mod config;
 pub mod endpoints;
 pub mod error;
+pub mod logging;
 pub mod query;
 
 pub use auth::{JwtClaims, JwtSigner};
 pub use client::UpbitClient;
-pub use config::{Credentials, SecretValue, UpbitConfig, UpbitConfigBuilder};
+pub use config::{
+    Credentials, FallbackConfig, RetryConfig, SecretValue, UpbitConfig, UpbitConfigBuilder,
+};
 pub use endpoints::*;
 pub use error::{ErrorResponse, SdkError, UpbitApiError};
+pub use logging::{redact_sensitive_text, redact_url, REDACTED};
 pub use query::{QueryParams, QueryValue};
 
 /// Default Upbit REST API base URL.
