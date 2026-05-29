@@ -28,7 +28,8 @@ conformance details.
 
 ## SDK Endpoint Usage
 
-Use the local mock for credential-free endpoint development and tests:
+Use the local mock for endpoint development and tests. Quotation mock examples
+are credential-free:
 
 ```rust,no_run
 use upbit_sdk::{CandleRequest, MinuteCandleUnit, UpbitClient, UpbitConfig};
@@ -53,8 +54,24 @@ let candles = client
 # }
 ```
 
-Exchange endpoints require credentials and JWT signing. Keep live credentials in
-the caller's secret store or environment, never in source code or fixtures:
+Auth-required exchange methods still need SDK credentials so the client can
+build a bearer JWT, but local mock tests should use dummy, non-live values only:
+
+```rust,no_run
+use upbit_sdk::{Credentials, UpbitClient, UpbitConfig};
+
+# fn example() -> Result<UpbitClient, upbit_sdk::SdkError> {
+let config = UpbitConfig::builder()
+    .base_url("http://127.0.0.1:8001/v1")?
+    .credentials(Credentials::new("test-access", "test-secret")?)
+    .build()?;
+UpbitClient::new(config)
+# }
+```
+
+Live exchange endpoints require credentials and JWT signing. Keep live
+credentials in the caller's secret store or environment, never in source code,
+mock tests, or fixtures:
 
 ```rust,no_run
 use upbit_sdk::{Credentials, UpbitClient, UpbitConfig};
