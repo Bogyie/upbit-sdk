@@ -9,6 +9,9 @@ use crate::REST_BASE_URL;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_USER_AGENT: &str = concat!("upbit-sdk-rust/", env!("CARGO_PKG_VERSION"));
+const DEFAULT_RETRY_MAX_ATTEMPTS: usize = 3;
+const DEFAULT_RETRY_INITIAL_BACKOFF: Duration = Duration::from_millis(100);
+const DEFAULT_RETRY_MAX_BACKOFF: Duration = Duration::from_secs(2);
 
 #[derive(Clone, Eq, PartialEq)]
 pub struct SecretValue(String);
@@ -86,8 +89,8 @@ pub struct UpbitConfig {
     credentials: Option<Credentials>,
     timeout: Duration,
     user_agent: String,
-    retry_enabled: bool,
-    fallback_enabled: bool,
+    retry: RetryConfig,
+    fallback: FallbackConfig,
 }
 
 impl UpbitConfig {
@@ -119,12 +122,22 @@ impl UpbitConfig {
 
     #[must_use]
     pub const fn retry_enabled(&self) -> bool {
-        self.retry_enabled
+        self.retry.is_enabled()
     }
 
     #[must_use]
     pub const fn fallback_enabled(&self) -> bool {
-        self.fallback_enabled
+        self.fallback.is_enabled()
+    }
+
+    #[must_use]
+    pub const fn retry(&self) -> &RetryConfig {
+        &self.retry
+    }
+
+    #[must_use]
+    pub const fn fallback(&self) -> &FallbackConfig {
+        &self.fallback
     }
 
     pub(crate) fn validate_authenticated_transport(&self) -> Result<(), SdkError> {
@@ -146,8 +159,183 @@ pub struct UpbitConfigBuilder {
     credentials: Option<Credentials>,
     timeout: Duration,
     user_agent: String,
-    retry_enabled: bool,
-    fallback_enabled: bool,
+    retry: RetryConfig,
+    fallback: FallbackConfig,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RetryConfig {
+    enabled: bool,
+    max_attempts: usize,
+    initial_backoff: Duration,
+    max_backoff: Duration,
+    retry_unsafe_requests: bool,
+}
+
+impl RetryConfig {
+    #[must_use]
+    pub const fn disabled() -> Self {
+        Self {
+            enabled: false,
+            max_attempts: DEFAULT_RETRY_MAX_ATTEMPTS,
+            initial_backoff: DEFAULT_RETRY_INITIAL_BACKOFF,
+            max_backoff: DEFAULT_RETRY_MAX_BACKOFF,
+            retry_unsafe_requests: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn enabled_default() -> Self {
+        Self {
+            enabled: true,
+            ..Self::disabled()
+        }
+    }
+
+    #[must_use]
+    pub const fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    #[must_use]
+    pub const fn max_attempts(&self) -> usize {
+        self.max_attempts
+    }
+
+    #[must_use]
+    pub const fn initial_backoff(&self) -> Duration {
+        self.initial_backoff
+    }
+
+    #[must_use]
+    pub const fn max_backoff(&self) -> Duration {
+        self.max_backoff
+    }
+
+    #[must_use]
+    pub const fn retry_unsafe_requests(&self) -> bool {
+        self.retry_unsafe_requests
+    }
+
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    pub fn with_max_attempts(mut self, max_attempts: usize) -> Result<Self, SdkError> {
+        if max_attempts == 0 {
+            return Err(SdkError::Config(
+                "retry max attempts must be greater than zero".into(),
+            ));
+        }
+        self.max_attempts = max_attempts;
+        Ok(self)
+    }
+
+    pub fn with_backoff(
+        mut self,
+        initial_backoff: Duration,
+        max_backoff: Duration,
+    ) -> Result<Self, SdkError> {
+        if initial_backoff > max_backoff {
+            return Err(SdkError::Config(
+                "retry initial backoff cannot exceed max backoff".into(),
+            ));
+        }
+        self.initial_backoff = initial_backoff;
+        self.max_backoff = max_backoff;
+        Ok(self)
+    }
+
+    pub fn with_retry_unsafe_requests(mut self, retry_unsafe_requests: bool) -> Self {
+        self.retry_unsafe_requests = retry_unsafe_requests;
+        self
+    }
+}
+
+impl Default for RetryConfig {
+    fn default() -> Self {
+        Self::disabled()
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FallbackConfig {
+    enabled: bool,
+    base_url: Option<Url>,
+    allow_authenticated_requests: bool,
+    allow_unsafe_requests: bool,
+}
+
+impl FallbackConfig {
+    #[must_use]
+    pub const fn disabled() -> Self {
+        Self {
+            enabled: false,
+            base_url: None,
+            allow_authenticated_requests: false,
+            allow_unsafe_requests: false,
+        }
+    }
+
+    #[must_use]
+    pub fn enabled_with_base_url(base_url: Url) -> Self {
+        Self {
+            enabled: true,
+            base_url: Some(base_url),
+            allow_authenticated_requests: false,
+            allow_unsafe_requests: false,
+        }
+    }
+
+    #[must_use]
+    pub const fn is_enabled(&self) -> bool {
+        self.enabled
+    }
+
+    #[must_use]
+    pub const fn base_url(&self) -> Option<&Url> {
+        self.base_url.as_ref()
+    }
+
+    #[must_use]
+    pub const fn allow_authenticated_requests(&self) -> bool {
+        self.allow_authenticated_requests
+    }
+
+    #[must_use]
+    pub const fn allow_unsafe_requests(&self) -> bool {
+        self.allow_unsafe_requests
+    }
+
+    pub fn with_enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
+        self
+    }
+
+    pub fn with_base_url(mut self, base_url: impl AsRef<str>) -> Result<Self, SdkError> {
+        let parsed = Url::parse(base_url.as_ref())
+            .map_err(|error| SdkError::Config(format!("invalid fallback base URL: {error}")))?;
+        validate_base_url(&parsed)?;
+        self.base_url = Some(parsed);
+        Ok(self)
+    }
+
+    pub fn with_allow_authenticated_requests(mut self, allowed: bool) -> Self {
+        self.allow_authenticated_requests = allowed;
+        self
+    }
+
+    pub fn with_allow_unsafe_requests(mut self, allowed: bool) -> Self {
+        self.allow_unsafe_requests = allowed;
+        self
+    }
+}
+
+impl Default for FallbackConfig {
+    fn default() -> Self {
+        Self::disabled()
+    }
 }
 
 impl UpbitConfigBuilder {
@@ -183,25 +371,80 @@ impl UpbitConfigBuilder {
     }
 
     #[must_use]
-    pub const fn retry_enabled(mut self, retry_enabled: bool) -> Self {
-        self.retry_enabled = retry_enabled;
+    pub fn retry_enabled(mut self, retry_enabled: bool) -> Self {
+        self.retry = self.retry.with_enabled(retry_enabled);
         self
     }
 
     #[must_use]
-    pub const fn fallback_enabled(mut self, fallback_enabled: bool) -> Self {
-        self.fallback_enabled = fallback_enabled;
+    pub fn fallback_enabled(mut self, fallback_enabled: bool) -> Self {
+        self.fallback = self.fallback.with_enabled(fallback_enabled);
+        self
+    }
+
+    #[must_use]
+    pub fn retry_config(mut self, retry: RetryConfig) -> Self {
+        self.retry = retry;
+        self
+    }
+
+    #[must_use]
+    pub fn fallback_config(mut self, fallback: FallbackConfig) -> Self {
+        self.fallback = fallback;
+        self
+    }
+
+    pub fn retry_max_attempts(mut self, max_attempts: usize) -> Result<Self, SdkError> {
+        self.retry = self.retry.with_max_attempts(max_attempts)?;
+        Ok(self)
+    }
+
+    pub fn retry_backoff(
+        mut self,
+        initial_backoff: Duration,
+        max_backoff: Duration,
+    ) -> Result<Self, SdkError> {
+        self.retry = self.retry.with_backoff(initial_backoff, max_backoff)?;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn retry_unsafe_requests(mut self, retry_unsafe_requests: bool) -> Self {
+        self.retry = self.retry.with_retry_unsafe_requests(retry_unsafe_requests);
+        self
+    }
+
+    pub fn fallback_base_url(mut self, base_url: impl AsRef<str>) -> Result<Self, SdkError> {
+        self.fallback = self.fallback.with_base_url(base_url)?;
+        Ok(self)
+    }
+
+    #[must_use]
+    pub fn fallback_allow_authenticated_requests(mut self, allowed: bool) -> Self {
+        self.fallback = self.fallback.with_allow_authenticated_requests(allowed);
+        self
+    }
+
+    #[must_use]
+    pub fn fallback_allow_unsafe_requests(mut self, allowed: bool) -> Self {
+        self.fallback = self.fallback.with_allow_unsafe_requests(allowed);
         self
     }
 
     pub fn build(self) -> Result<UpbitConfig, SdkError> {
+        if self.fallback.is_enabled() && self.fallback.base_url().is_none() {
+            return Err(SdkError::Config(
+                "fallback base URL is required when fallback is enabled".into(),
+            ));
+        }
+
         Ok(UpbitConfig {
             base_url: self.base_url,
             credentials: self.credentials,
             timeout: self.timeout,
             user_agent: self.user_agent,
-            retry_enabled: self.retry_enabled,
-            fallback_enabled: self.fallback_enabled,
+            retry: self.retry,
+            fallback: self.fallback,
         })
     }
 }
@@ -243,8 +486,8 @@ impl Default for UpbitConfigBuilder {
             credentials: None,
             timeout: DEFAULT_TIMEOUT,
             user_agent: DEFAULT_USER_AGENT.into(),
-            retry_enabled: false,
-            fallback_enabled: false,
+            retry: RetryConfig::default(),
+            fallback: FallbackConfig::default(),
         }
     }
 }
@@ -262,6 +505,11 @@ mod tests {
         assert_eq!(config.timeout(), Duration::from_secs(10));
         assert!(!config.retry_enabled());
         assert!(!config.fallback_enabled());
+        assert_eq!(config.retry().max_attempts(), 3);
+        assert!(!config.retry().retry_unsafe_requests());
+        assert!(config.fallback().base_url().is_none());
+        assert!(!config.fallback().allow_authenticated_requests());
+        assert!(!config.fallback().allow_unsafe_requests());
     }
 
     #[test]
@@ -272,8 +520,46 @@ mod tests {
             .is_err());
         assert!(UpbitConfig::builder().timeout(Duration::ZERO).is_err());
         assert!(UpbitConfig::builder().user_agent("  ").is_err());
+        assert!(UpbitConfig::builder().retry_max_attempts(0).is_err());
+        assert!(UpbitConfig::builder()
+            .retry_backoff(Duration::from_secs(2), Duration::from_secs(1))
+            .is_err());
+        assert!(UpbitConfig::builder()
+            .fallback_enabled(true)
+            .build()
+            .is_err());
         assert!(Credentials::new("", "secret").is_err());
         assert!(Credentials::new("access", "").is_err());
+    }
+
+    #[test]
+    fn enables_retry_and_fallback_only_when_explicitly_configured() {
+        let config = UpbitConfig::builder()
+            .retry_enabled(true)
+            .retry_max_attempts(2)
+            .unwrap()
+            .retry_backoff(Duration::ZERO, Duration::from_millis(5))
+            .unwrap()
+            .retry_unsafe_requests(true)
+            .fallback_enabled(true)
+            .fallback_base_url("http://127.0.0.1:8081/v1")
+            .unwrap()
+            .fallback_allow_authenticated_requests(true)
+            .fallback_allow_unsafe_requests(true)
+            .build()
+            .unwrap();
+
+        assert!(config.retry_enabled());
+        assert_eq!(config.retry().max_attempts(), 2);
+        assert_eq!(config.retry().initial_backoff(), Duration::ZERO);
+        assert!(config.retry().retry_unsafe_requests());
+        assert!(config.fallback_enabled());
+        assert_eq!(
+            config.fallback().base_url().unwrap().as_str(),
+            "http://127.0.0.1:8081/v1"
+        );
+        assert!(config.fallback().allow_authenticated_requests());
+        assert!(config.fallback().allow_unsafe_requests());
     }
 
     #[test]

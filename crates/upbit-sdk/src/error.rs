@@ -70,6 +70,19 @@ impl SdkError {
             Self::Config(_) | Self::Auth(_) | Self::Serialization(_) => false,
         }
     }
+
+    #[must_use]
+    pub const fn retry_after(&self) -> Option<Duration> {
+        match self {
+            Self::RateLimited { retry_after, .. } => *retry_after,
+            Self::Config(_)
+            | Self::Auth(_)
+            | Self::Transport(_)
+            | Self::Serialization(_)
+            | Self::Upbit { .. }
+            | Self::HttpStatus { .. } => None,
+        }
+    }
 }
 
 pub(crate) async fn map_response_error(response: reqwest::Response) -> SdkError {
