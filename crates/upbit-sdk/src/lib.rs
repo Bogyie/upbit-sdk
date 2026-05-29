@@ -4,6 +4,18 @@
 //! root. SDK request/response types should be generated or implemented against
 //! that file instead of scraping the public docs during builds.
 
+pub mod auth;
+pub mod client;
+pub mod config;
+pub mod error;
+pub mod query;
+
+pub use auth::{JwtClaims, JwtSigner};
+pub use client::UpbitClient;
+pub use config::{Credentials, SecretValue, UpbitConfig, UpbitConfigBuilder};
+pub use error::{ErrorResponse, SdkError, UpbitApiError};
+pub use query::{QueryParams, QueryValue};
+
 /// Default Upbit REST API base URL.
 pub const REST_BASE_URL: &str = "https://api.upbit.com/v1";
 
