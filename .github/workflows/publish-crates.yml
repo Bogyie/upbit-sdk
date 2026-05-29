@@ -1,0 +1,143 @@
+name: Publish crates.io package
+
+on:
+  release:
+    types:
+      - published
+  pull_request:
+    paths:
+      - ".github/workflows/publish-crates.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/upbit-sdk/**"
+  push:
+    branches:
+      - integration/BOG-223-upbit-rust-sdk
+      - main
+    paths:
+      - ".github/workflows/publish-crates.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/upbit-sdk/**"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "Run a dry run or publish the upbit-sdk crate."
+        required: true
+        type: choice
+        default: dry-run
+        options:
+          - dry-run
+          - publish
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-crates-${{ github.ref }}
+  cancel-in-progress: false
+
+env:
+  CARGO_TERM_COLOR: always
+  CRATE_PATH: crates/upbit-sdk
+
+jobs:
+  dry-run:
+    name: Dry-run upbit-sdk publish
+    if: ${{ github.event_name != 'release' && (github.event_name != 'workflow_dispatch' || inputs.mode == 'dry-run') }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Select stable Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+
+      - name: Confirm dry-run behavior
+        run: echo "Dry-run mode selected; no crates.io upload will be attempted."
+
+      - name: Check package metadata
+        run: cargo package -p upbit-sdk --allow-dirty --list
+
+      - name: Dry-run publish crate
+        uses: katyo/publish-crates@02cc2f1ad653fb25c7d1ff9eb590a8a50d06186b
+        with:
+          path: ${{ env.CRATE_PATH }}
+          dry-run: true
+          check-repo: false
+
+  publish:
+    name: Publish upbit-sdk
+    if: ${{ github.event_name == 'release' || (github.event_name == 'workflow_dispatch' && inputs.mode == 'publish') }}
+    runs-on: ubuntu-latest
+    environment: crates-io
+    env:
+      HAS_CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN != '' }}
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Select stable Rust toolchain
+        run: |
+          rustup update stable
+          rustup default stable
+
+      - name: Validate publish preconditions
+        run: |
+          set -euo pipefail
+          if [[ "${GITHUB_REF_TYPE}" != "tag" ]]; then
+            echo "Real publish must run from a release tag ref." >&2
+            exit 1
+          fi
+          if [[ "${HAS_CARGO_REGISTRY_TOKEN}" != "true" ]]; then
+            echo "CARGO_REGISTRY_TOKEN secret is required for real publish." >&2
+            exit 1
+          fi
+
+          git fetch --no-tags origin +refs/heads/main:refs/remotes/origin/main
+          tag_commit="$(git rev-parse "${GITHUB_REF_NAME}^{commit}")"
+          main_commit="$(git rev-parse "origin/main^{commit}")"
+
+          if ! git merge-base --is-ancestor "${tag_commit}" "${main_commit}"; then
+            echo "Release tag ${GITHUB_REF_NAME} must point to a commit already reachable from origin/main." >&2
+            exit 1
+          fi
+
+          if [[ "${GITHUB_EVENT_NAME}" == "release" ]]; then
+            event_action="$(jq -r '.action // ""' "${GITHUB_EVENT_PATH}")"
+            if [[ "${event_action}" != "published" ]]; then
+              echo "Release-triggered publishing only accepts the published action." >&2
+              exit 1
+            fi
+
+            release_target="$(jq -r '.release.target_commitish // ""' "${GITHUB_EVENT_PATH}")"
+            case "${release_target}" in
+              main|refs/heads/main|"${main_commit}"|"${tag_commit}")
+                ;;
+              *)
+                echo "Release target_commitish must be main or the verified main/tag commit; got '${release_target}'." >&2
+                exit 1
+                ;;
+            esac
+
+            echo "Release publish preconditions satisfied for ${GITHUB_REF_NAME} on main."
+          else
+            echo "Manual publish preconditions satisfied for ${GITHUB_REF_NAME} on main."
+          fi
+
+      - name: Check package metadata
+        run: cargo package -p upbit-sdk --allow-dirty --list
+
+      - name: Publish crate
+        uses: katyo/publish-crates@02cc2f1ad653fb25c7d1ff9eb590a8a50d06186b
+        with:
+          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+          path: ${{ env.CRATE_PATH }}
+          dry-run: false
+          check-repo: true
