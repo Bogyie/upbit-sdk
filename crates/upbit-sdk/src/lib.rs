@@ -7,6 +7,7 @@
 pub mod auth;
 pub mod client;
 pub mod config;
+pub mod endpoints;
 pub mod error;
 pub mod logging;
 pub mod query;
@@ -16,6 +17,7 @@ pub use client::UpbitClient;
 pub use config::{
     Credentials, FallbackConfig, RetryConfig, SecretValue, UpbitConfig, UpbitConfigBuilder,
 };
+pub use endpoints::*;
 pub use error::{ErrorResponse, SdkError, UpbitApiError};
 pub use logging::{redact_sensitive_text, redact_url, REDACTED};
 pub use query::{QueryParams, QueryValue};

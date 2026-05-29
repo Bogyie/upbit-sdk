@@ -23,6 +23,9 @@ pub enum SdkError {
     #[error("authentication error: {0}")]
     Auth(String),
 
+    #[error("request error: {0}")]
+    Request(String),
+
     #[error("transport error: {0}")]
     Transport(#[from] reqwest::Error),
 
@@ -57,7 +60,11 @@ impl SdkError {
             Self::RateLimited { status, .. }
             | Self::Upbit { status, .. }
             | Self::HttpStatus { status, .. } => Some(*status),
-            Self::Config(_) | Self::Auth(_) | Self::Transport(_) | Self::Serialization(_) => None,
+            Self::Config(_)
+            | Self::Auth(_)
+            | Self::Request(_)
+            | Self::Transport(_)
+            | Self::Serialization(_) => None,
         }
     }
 
@@ -67,7 +74,7 @@ impl SdkError {
             Self::RateLimited { .. } | Self::Transport(_) => true,
             Self::HttpStatus { status, .. } => status.is_server_error(),
             Self::Upbit { status, .. } => status.is_server_error(),
-            Self::Config(_) | Self::Auth(_) | Self::Serialization(_) => false,
+            Self::Config(_) | Self::Auth(_) | Self::Request(_) | Self::Serialization(_) => false,
         }
     }
 
@@ -77,6 +84,7 @@ impl SdkError {
             Self::RateLimited { retry_after, .. } => *retry_after,
             Self::Config(_)
             | Self::Auth(_)
+            | Self::Request(_)
             | Self::Transport(_)
             | Self::Serialization(_)
             | Self::Upbit { .. }

@@ -52,6 +52,12 @@ impl From<i64> for QueryValue {
     }
 }
 
+impl From<bool> for QueryValue {
+    fn from(value: bool) -> Self {
+        Self::single(value.to_string())
+    }
+}
+
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct QueryParams {
     pairs: Vec<(String, QueryValue)>,
@@ -72,6 +78,11 @@ impl QueryParams {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.pairs.is_empty()
+    }
+
+    pub(crate) fn extend(mut self, other: Self) -> Self {
+        self.pairs.extend(other.pairs);
+        self
     }
 
     /// Serializes query parameters in insertion order.
