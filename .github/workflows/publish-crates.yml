@@ -60,9 +60,8 @@ jobs:
         run: cargo package -p upbit-sdk --allow-dirty --list
 
       - name: Dry-run publish crate
-        uses: katyo/publish-crates@v2
+        uses: katyo/publish-crates@02cc2f1ad653fb25c7d1ff9eb590a8a50d06186b
         with:
-          registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           path: ${{ env.CRATE_PATH }}
           dry-run: true
           check-repo: false
@@ -101,7 +100,7 @@ jobs:
         run: cargo package -p upbit-sdk --allow-dirty --list
 
       - name: Publish crate
-        uses: katyo/publish-crates@v2
+        uses: katyo/publish-crates@02cc2f1ad653fb25c7d1ff9eb590a8a50d06186b
         with:
           registry-token: ${{ secrets.CARGO_REGISTRY_TOKEN }}
           path: ${{ env.CRATE_PATH }}

@@ -5,7 +5,9 @@ readiness and controlled manual publishing of the `upbit-sdk` crate:
 
 - workflow: `.github/workflows/publish-crates.yml`
 - package path: `crates/upbit-sdk`
-- requested publish action: `katyo/publish-crates@v2`
+- requested publish action: reviewed pinned equivalent of
+  `katyo/publish-crates@v2`
+- reviewed action revision: `02cc2f1ad653fb25c7d1ff9eb590a8a50d06186b`
 - crates.io token secret: `CARGO_REGISTRY_TOKEN`
 - protected GitHub Environment for real publish: `crates-io`
 
@@ -16,14 +18,18 @@ merge release branches unless the release is explicitly authorized.
 
 The workflow runs in dry-run mode for pull requests, pushes to
 `integration/BOG-223-upbit-rust-sdk`, pushes to `main`, and manual
-`workflow_dispatch` runs where `mode` is `dry-run`.
+`workflow_dispatch` runs where `mode` is `dry-run`. Pull request and push
+dry-runs only trigger when the workflow or package paths listed in the workflow
+change.
 
 Dry-run jobs:
 
 - run `cargo package -p upbit-sdk --allow-dirty --list`;
-- call `katyo/publish-crates@v2` with `dry-run: true`;
+- call the reviewed pinned `katyo/publish-crates@v2` equivalent with
+  `dry-run: true`;
 - set `check-repo: false` so pull request or detached checkout contexts do not
   fail before the publish dry run;
+- do not pass `registry-token` to the third-party action;
 - must not upload a package to crates.io.
 
 The workflow prints an explicit dry-run confirmation before the action step.
@@ -42,7 +48,8 @@ of these conditions are true:
   allow the job to continue.
 
 The publish job validates the tag ref and token presence before invoking
-`katyo/publish-crates@v2` with `dry-run: false` and `check-repo: true`.
+the reviewed pinned `katyo/publish-crates@v2` equivalent with `dry-run: false`
+and `check-repo: true`.
 
 Recommended release sequence:
 
@@ -60,8 +67,9 @@ Store the crates.io token only as a GitHub Actions secret named
 `CARGO_REGISTRY_TOKEN`. Do not put the token in repository files, issue
 comments, workflow logs, screenshots, or local command output.
 
-Dry-run jobs pass the same input shape to the action, but the action documents
-that the registry token is not used when dry-run mode is enabled.
+Dry-run jobs do not pass the registry token to the third-party action. The
+token is only provided to the protected manual publish job after its tag and
+secret preconditions pass.
 
 ## Failure And Rollback Notes
 

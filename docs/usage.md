@@ -206,9 +206,10 @@ Known future publish blockers:
 The repository also includes `.github/workflows/publish-crates.yml` for
 automated package dry runs and a protected manual publish path. Pull requests,
 integration-branch pushes, main-branch pushes, and manual `mode=dry-run`
-dispatches run the requested `katyo/publish-crates@v2` action with
-`dry-run: true` and cannot publish to crates.io. Real publishing requires a
-manual `mode=publish` dispatch from a release tag, a `CARGO_REGISTRY_TOKEN`
-GitHub secret, and the protected `crates-io` environment.
+dispatches run a reviewed pinned equivalent of the requested
+`katyo/publish-crates@v2` action with `dry-run: true` and cannot publish to
+crates.io. Dry-run jobs do not pass a registry token to the third-party action.
+Real publishing requires a manual `mode=publish` dispatch from a release tag, a
+`CARGO_REGISTRY_TOKEN` GitHub secret, and the protected `crates-io` environment.
 
 See `docs/publishing.md` before preparing any crates.io release.

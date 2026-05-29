@@ -40,11 +40,13 @@ upbit-sdk = { path = "crates/upbit-sdk" }
 Future crates.io publishing must be done separately and deliberately. Do not
 run `cargo publish` without explicit release authorization and a reviewed
 release checklist. The repository workflow `.github/workflows/publish-crates.yml`
-uses `katyo/publish-crates@v2`; pull request, integration-branch, main-branch,
-and manual dry-run paths cannot publish because they run with `dry-run: true`.
-Real publishing requires a manual workflow dispatch with `mode=publish`, a
-release tag ref, the `CARGO_REGISTRY_TOKEN` GitHub secret, and the protected
-`crates-io` environment. See `docs/publishing.md` for the full procedure.
+uses a reviewed pinned equivalent of `katyo/publish-crates@v2`; pull request,
+integration-branch, main-branch, and manual dry-run paths cannot publish
+because they run with `dry-run: true` and do not pass a registry token to the
+third-party action. Real publishing requires a manual workflow dispatch with
+`mode=publish`, a release tag ref, the `CARGO_REGISTRY_TOKEN` GitHub secret,
+and the protected `crates-io` environment. See `docs/publishing.md` for the
+full procedure.
 
 ## Feature Scope
 
