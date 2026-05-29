@@ -6,6 +6,15 @@ license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
 description = "Rust SDK foundation for the Upbit REST API."
+readme = "README.md"
+keywords = ["upbit", "crypto", "sdk", "rest", "trading"]
+categories = ["api-bindings", "asynchronous", "web-programming::http-client"]
+include = [
+    "Cargo.toml",
+    "README.md",
+    "src/**/*.rs",
+    "examples/**/*.rs",
+]
 
 [lib]
 name = "upbit_sdk"
